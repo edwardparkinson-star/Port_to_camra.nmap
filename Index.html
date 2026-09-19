@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera Port Kit — fill once, copy anywhere</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 16px;
+         background: #0f1115; color: #e8e8e8; max-width: 760px; margin-inline: auto; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .sub { color: #9aa0aa; font-size: .9rem; margin-bottom: 16px; }
+  .card { background: #171a21; border: 1px solid #2a2f3a; border-radius: 10px;
+          padding: 14px; margin-bottom: 14px; }
+  .card h2 { font-size: 1.05rem; margin: 0 0 8px; }
+  label { display: block; font-size: .8rem; color: #9aa0aa; margin: 8px 0 4px; }
+  input, select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #2a2f3a;
+                  background: #0f1115; color: #e8e8e8; font-size: 1rem; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  pre { background: #0b0d11; border: 1px solid #2a2f3a; border-radius: 8px;
+        padding: 10px; overflow-x: auto; font-size: .82rem; white-space: pre-wrap;
+        word-break: break-all; }
+  button { background: #2f6fed; color: #fff; border: 0; border-radius: 8px;
+           padding: 10px 14px; font-size: .9rem; cursor: pointer; margin-top: 8px; }
+  button:active { background: #2459c4; }
+  .steps { font-size: .9rem; line-height: 1.7; color: #c9cdd4; }
+  .steps b { color: #fff; }
+  .warn { font-size: .8rem; color: #9aa0aa; margin-top: 18px; }
+  code { color: #8fd0ff; }
+</style>
+</head>
+<body>
+
+<h1>🎥 Camera Port Kit</h1>
+<div class="sub">Type the camera details once — every block below fills itself in. Tap <b>Copy</b> on any block to paste it into that system.</div>
+
+<div class="card">
+  <h2>Camera details</h2>
+  <label>Camera IP address</label>
+  <input id="ip" placeholder="192.168.1.64" autocomplete="off">
+  <div class="row">
+    <div>
+      <label>RTSP port</label>
+      <input id="port" value="554" inputmode="numeric" autocomplete="off">
+    </div>
+    <div>
+      <label>Brand (sets the stream path)</label>
+      <select id="brand">
+        <option value="generic">Generic / unknown</option>
+        <option value="hikvision">Hikvision</option>
+        <option value="dahua">Dahua / Amcrest</option>
+        <option value="reolink">Reolink</option>
+      </select>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>Username</label>
+      <input id="user" value="admin" autocomplete="off">
+    </div>
+    <div>
+      <label>Password</label>
+      <input id="pass" placeholder="camera password" autocomplete="off">
+    </div>
+  </div>
+  <label>Stream path (auto-filled from brand — edit if your camera differs)</label>
+  <input id="path" value="stream1" autocomplete="off">
+</div>
+
+<div class="card">
+  <h2>1 · RTSP stream URL</h2>
+  <pre id="out-rtsp"></pre>
+  <button data-copy="out-rtsp">Copy URL</button>
+  <div class="steps" style="margin-top:10px">If that path fails, try these variants:<br><span id="out-variants"></span></div>
+</div>
+
+<div class="card">
+  <h2>2 · VLC</h2>
+  <div class="steps"><b>Media</b> → <b>Open Network Stream</b> → paste the URL from block 1 → <b>Play</b>.</div>
+</div>
+
+<div class="card">
+  <h2>3 · OBS Studio</h2>
+  <div class="steps"><b>Sources ＋</b> → <b>Media Source</b> → uncheck <b>Local File</b> → paste the URL from block 1 into <b>Input</b> → <b>OK</b>.</div>
+</div>
+
+<div class="card">
+  <h2>4 · Home Assistant</h2>
+  <div class="steps">Paste into <code>configuration.yaml</code>, then restart Home Assistant.</div>
+  <pre id="out-ha"></pre>
+  <button data-copy="out-ha">Copy YAML</button>
+</div>
+
+<div class="card">
+  <h2>5 · Browser viewing — ffmpeg bridge</h2>
+  <div class="steps">Browsers can't play RTSP directly. Run this on a computer on the same network, then open the viewer page from block 6.</div>
+  <pre id="out-ffmpeg"></pre>
+  <button data-copy="out-ffmpeg">Copy command</button>
+</div>
+
+<div class="card">
+  <h2>6 · Browser viewer page</h2>
+  <div class="steps">Save this as <code>camera.html</code> next to the <code>stream.m3u8</code> from block 5, serve the folder with any static web server, and open it.</div>
+  <button id="dl">Download camera.html</button>
+  <pre id="out-html" style="max-height:220px; overflow-y:auto;"></pre>
+  <button data-copy="out-html">Copy HTML</button>
+</div>
+
+<div class="card">
+  <h2>7 · ONVIF systems (NVR / Blue Iris / Synology)</h2>
+  <div class="steps" id="out-onvif"></div>
+</div>
+
+<div class="card">
+  <h2>8 · Quick connection test</h2>
+  <div class="steps">Run on the same network. <b>401</b> = camera is alive and wants a login. Timeout = wrong IP/port or blocked.</div>
+  <pre id="out-curl"></pre>
+  <button data-copy="out-curl">Copy command</button>
+</div>
+
+<p class="warn">Only use on cameras and networks you own or have permission to access.</p>
+
+<script>
+const $ = id => document.getElementById(id);
+const brandPaths = {
+  generic:   'stream1',
+  hikvision: 'Streaming/Channels/101',
+  dahua:     'cam/realmonitor?channel=1&subtype=0',
+  reolink:   'h264Preview_01_main'
+};
+const variants = ['stream1', 'h264', 'live',
+  'Streaming/Channels/101', 'cam/realmonitor?channel=1&subtype=0',
+  'h264Preview_01_main'];
+
+function enc(s){ return encodeURIComponent(s); }
+
+function render(){
+  const ip   = $('ip').value.trim()   || 'CAMERA-IP';
+  const port = $('port').value.trim() || '554';
+  const user = $('user').value.trim() || 'USER';
+  const pass = $('pass').value        || 'PASS';
+  const path = $('path').value.trim() || 'stream1';
+  const url  = `rtsp://${enc(user)}:${enc(pass)}@${ip}:${port}/${path}`;
+
+  $('out-rtsp').textContent = url;
+  $('out-variants').innerHTML = variants
+    .filter(v => v !== path)
+    .map(v => `<code>rtsp://${ip}:${port}/${v}</code>`).join('<br>');
+
+  $('out-ha').textContent =
+`camera:
+  - platform: ffmpeg
+    name: Front Door
+    input: ${url}`;
+
+  $('out-ffmpeg').textContent =
+`ffmpeg -rtsp_transport tcp -i "${url}" \\
+  -c:v copy -c:a aac -f hls -hls_time 2 -hls_list_size 5 \\
+  -hls_flags delete_segments stream.m3u8`;
+
+  $('out-html').textContent = viewerHtml();
+
+  $('out-onvif').innerHTML =
+    `Add camera → brand <b>ONVIF</b><br>` +
+    `Host: <b>${ip}</b> · Port: <b>2020</b> (try 80 or 8000 if that fails)<br>` +
+    `Username: <b>${user}</b> · Password: <b>${pass === 'PASS' ? 'your camera password' : '••••••••'}</b><br>` +
+    `The system pulls the stream URL itself via ONVIF.`;
+
+  $('out-curl').textContent = `curl -I rtsp://${ip}:${port}/${path}`;
+}
+
+function viewerHtml(){
+  return `<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"><\/script>
+<video id="v" controls muted autoplay style="width:100%"><\/video>
+<script>
+  var video = document.getElementById('v');
+  if (Hls.isSupported()) {
+    var hls = new Hls();
+    hls.loadSource('stream.m3u8');
+    hls.attachMedia(video);
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = 'stream.m3u8';
+  }
+<\/script>`;
+}
+
+$('brand').addEventListener('change', e => {
+  $('path').value = brandPaths[e.target.value] || 'stream1';
+  render();
+});
+['ip','port','user','pass','path'].forEach(id =>
+  $(id).addEventListener('input', render));
+
+document.querySelectorAll('[data-copy]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const text = $(btn.getAttribute('data-copy')).textContent;
+    const done = () => { btn.textContent = 'Copied ✓'; setTimeout(() => btn.textContent = 'Copy', 1500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallback());
+    } else fallback();
+    function fallback(){
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch(e){}
+      document.body.removeChild(ta);
+    }
+  });
+});
+
+$('dl').addEventListener('click', () => {
+  const blob = new Blob([viewerHtml()], {type: 'text/html'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'camera.html';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+});
+
+render();
+</script>
+</body>
+  </html>
