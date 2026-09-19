@@ -1,0 +1,81 @@
+==============================================================
+CAMERA PORT KIT — copy any block into your outside system
+==============================================================
+Only use on cameras and networks you own or have permission to access.
+
+Replace these placeholders in every block:
+  CAMERA-IP  -> the camera's IP address (e.g. 192.168.1.64)
+  USER       -> the camera's username (often "admin")
+  PASS       -> the camera's password
+  554        -> RTSP port (some cameras use 8554)
+
+
+--------------------------------------------------------------
+1) RTSP STREAM URL — works in VLC, OBS, NVRs, Blue Iris
+--------------------------------------------------------------
+rtsp://USER:PASS@CAMERA-IP:554/stream1
+
+Common stream path variants (try in order):
+  rtsp://USER:PASS@CAMERA-IP:554/stream1
+  rtsp://USER:PASS@CAMERA-IP:554/h264
+  rtsp://USER:PASS@CAMERA-IP:554/live
+  rtsp://USER:PASS@CAMERA-IP:554/Streaming/Channels/101   (Hikvision)
+  rtsp://USER:PASS@CAMERA-IP:554/cam/realmonitor?channel=1&subtype=0   (Dahua)
+
+VLC:  Media > Open Network Stream > paste the URL > Play
+OBS:  Sources + > Media Source > uncheck "Local File" >
+      paste the URL into the Input box > OK
+
+
+--------------------------------------------------------------
+2) HOME ASSISTANT (paste into configuration.yaml)
+--------------------------------------------------------------
+camera:
+  - platform: ffmpeg
+    name: Front Door
+    input: rtsp://USER:PASS@CAMERA-IP:554/stream1
+
+
+--------------------------------------------------------------
+3) BROWSER VIEWING — RTSP to HLS bridge
+   (RTSP does not play in browsers directly, so convert it.
+   Needs ffmpeg on a computer on the same network.)
+--------------------------------------------------------------
+ffmpeg -rtsp_transport tcp -i "rtsp://USER:PASS@CAMERA-IP:554/stream1" \
+  -c:v copy -c:a aac -f hls -hls_time 2 -hls_list_size 5 \
+  -hls_flags delete_segments stream.m3u8
+
+Serve that folder with any static web server, then use this
+HTML page (save as camera.html next to stream.m3u8):
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<video id="v" controls muted autoplay style="width:100%"></video>
+<script>
+  var video = document.getElementById('v');
+  if (Hls.isSupported()) {
+    var hls = new Hls();
+    hls.loadSource('stream.m3u8');
+    hls.attachMedia(video);
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = 'stream.m3u8';
+  }
+</script>
+
+
+--------------------------------------------------------------
+4) ONVIF SYSTEMS — NVR / Blue Iris / Synology Surveillance
+--------------------------------------------------------------
+Add camera > brand "ONVIF" >
+  Host: CAMERA-IP
+  Port: 2020   (some cameras use 80 or 8000)
+  Username: USER
+  Password: PASS
+The system will pull the stream URL itself via ONVIF.
+
+
+--------------------------------------------------------------
+5) QUICK TEST — does the camera answer at all?
+   (paste into a terminal on the same network)
+--------------------------------------------------------------
+curl -I rtsp://CAMERA-IP:554/stream1
+# 401 = alive, needs login. Timeout = wrong IP/port or blocked.
